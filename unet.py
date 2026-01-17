@@ -79,7 +79,7 @@ class UNetWithoutDEM(UNet):
     def __init__(self, in_channels, num_classes):
         super().__init__(in_channels-1, num_classes)
     def forward(self, x):
-        return super().forward(x[:-1])
+        return super().forward(x[:, :-1, :, :])
 
 
 class UNet6(nn.Module):
