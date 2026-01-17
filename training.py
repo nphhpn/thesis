@@ -81,7 +81,7 @@ def train_loop(dataloaders, model, loss_fn, optimizer, warmup=0.1, decay=0.01, l
         train_one_epoch(dataloaders[0], model, loss_fn, optimizer, scheduler, log_timedelta)
 
         loss, computed_metrics = evaluate(dataloaders[1], model, loss_fn, metrics)
-        with open(f"{directory}/metrics.csv", "w", newline="") as file:
+        with open(f"{directory}/metrics.csv", "a", newline="") as file:
             writer = csv.writer(file)
             writer.writerow([epoch, loss] + list(computed_metrics.values()))
         
