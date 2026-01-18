@@ -80,6 +80,7 @@ def train_loop(dataloaders, model, loss_fn, optimizer, log_timedelta=30, metrics
 
     best = -np.inf
     best_epoch = 0
+    plateau_epoch = 0
     with open(f"{directory}/metrics.csv", "w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(["epoch", "train_loss", "val_loss"] + list(metrics.keys()))
@@ -107,10 +108,12 @@ def train_loop(dataloaders, model, loss_fn, optimizer, log_timedelta=30, metrics
         if current > best:
             best = current
             best_epoch = epoch
+            plateau_epoch = epoch
             torch.save(model.state_dict(), f"{directory}/best.pt")
         elif early_stop > 0 and epoch - best_epoch >= early_stop:
             break
-        elif epoch - best_epoch >= 5:
+        elif epoch - plateau_epoch >= 5:
+            plateau_epoch = epoch
             if log_timedelta > 0:
                 print("Plateau detected, load best model and reduce lr.")
             model.load_state_dict(torch.load(f"{directory}/best.pt"))
