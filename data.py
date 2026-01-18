@@ -15,6 +15,10 @@ class Dataset(TorchDataset):
         chip = self.chips[idx]
         data = np.load(os.path.join(self.directory, "data", chip))
         label = np.load(os.path.join(self.directory, "label", chip))
+
+        # Normalize based on pre-computed mean and std of training set
+        data = (data - [-10.4053, -17.2822, 38.7486]) / [4.0457, 4.7750, 33.6621]
+
         return data, label[None, :, :]
 
 

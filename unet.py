@@ -80,6 +80,31 @@ class UNetWithoutDEM(UNet):
         super().__init__(in_channels-1, num_classes)
     def forward(self, x):
         return super().forward(x[:, :-1, :, :])
+    
+
+class UNetWithDerivedFeatures(UNet):
+    def __init__(self, in_channels, num_classes):
+        super().__init__(in_channels*3, num_classes)
+    def forward(self, x):
+        B, C, H, W = x.shape
+        std, mean = torch.std_mean(x, dim=(2, 3), keepdim=True)
+        mean = mean.expand(B, C, H, W)
+        std = std.expand(B, C, H, W)
+        x = torch.cat([x, mean, std], dim=1)
+        return super().forward(x)
+    
+
+class UNetWithDerivedFeaturesWithoutDEM(UNet):
+    def __init__(self, in_channels, num_classes):
+        super().__init__((in_channels-1)*3, num_classes)
+    def forward(self, x):
+        x = x[:, :-1, :, :]
+        B, C, H, W = x.shape
+        std, mean = torch.std_mean(x, dim=(2, 3), keepdim=True)
+        mean = mean.expand(B, C, H, W)
+        std = std.expand(B, C, H, W)
+        x = torch.cat([x, mean, std], dim=1)
+        return super().forward(x)
 
 
 class UNet6(nn.Module):
