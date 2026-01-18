@@ -61,6 +61,7 @@ def train_one_epoch(dataloader, model, loss_fn, optimizer, scheduler=None, log_t
             print(f"{timestamp} batch {batch}/{num_batches}, loss {recent_loss / recent_count}")
             recent_loss = 0
             recent_count = 0
+    return total_loss / len(dataloader.dataset)
 
     
 def get_warmup_decay_scheduler(optimizer, dataloader, num_epochs, warmup_ratio=0.1, final_lr=0.01):
@@ -81,25 +82,25 @@ def train_loop(dataloaders, model, loss_fn, optimizer, log_timedelta=30, metrics
     best_epoch = 0
     with open(f"{directory}/metrics.csv", "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["epoch", "loss"] + list(metrics.keys()))
+        writer.writerow(["epoch", "train_loss", "val_loss"] + list(metrics.keys()))
     
     for epoch in range(1, num_epochs+1):
         if log_timedelta > 0:
             print(f"============ EPOCH {epoch} ============")
-        train_one_epoch(dataloaders[0], model, loss_fn, optimizer, warmup_scheduler, log_timedelta)
+        train_loss = train_one_epoch(dataloaders[0], model, loss_fn, optimizer, warmup_scheduler, log_timedelta)
 
-        loss, computed_metrics = evaluate(dataloaders[1], model, loss_fn, metrics)
+        val_loss, computed_metrics = evaluate(dataloaders[1], model, loss_fn, metrics)
         with open(f"{directory}/metrics.csv", "a", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow([epoch, loss] + list(computed_metrics.values()))
+            writer.writerow([epoch, train_loss, val_loss] + list(computed_metrics.values()))
         
         if log_timedelta > 0:
             print("----------")
-            print(f"val loss: {loss}")
+            print(f"val loss: {val_loss}")
             for key, metric in computed_metrics.items():
                 print(f"{key}: {metric}")
         
-        current = -loss if best_metric == "loss" else computed_metrics[best_metric]
+        current = -val_loss if best_metric == "loss" else computed_metrics[best_metric]
         if epoch == 5:
             warmup_scheduler = None
 
