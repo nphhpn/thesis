@@ -42,7 +42,7 @@ class TrainDataset(Dataset):
         return data.copy(), label.copy()
     
 
-def get_dataloaders(data_root, batch_size=1):
+def get_dataloaders(data_root, batch_size=4):
     train_dataset = TrainDataset(f"{data_root}/train")
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size*4, shuffle=True)
 

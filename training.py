@@ -63,11 +63,19 @@ def train_one_epoch(dataloader, model, loss_fn, optimizer, scheduler=None, log_t
             recent_count = 0
 
     
-def train_loop(dataloaders, model, loss_fn, optimizer, warmup=0.1, decay=0.01, log_timedelta=30, metrics={}, num_epochs=100, early_stop=10, directory=".", best_metric="loss"):
-    if warmup != 0 or decay != 0:
-        scheduler = get_warmup_decay_scheduler(optimizer, dataloaders[0], num_epochs, warmup, decay)
-    else:
-        scheduler = None
+def get_warmup_decay_scheduler(optimizer, dataloader, num_epochs, warmup_ratio=0.1, final_lr=0.01):
+    total_steps = len(dataloader) * num_epochs
+    warmup_steps = int(warmup_ratio * total_steps)
+    decay_steps = total_steps - warmup_steps
+    def lambda_lr(current_steps):
+        if current_steps < warmup_steps:
+            return current_steps / warmup_steps
+        return (total_steps - current_steps) / decay_steps * (1 - final_lr) + final_lr
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr)
+
+
+def train_loop(dataloaders, model, loss_fn, optimizer, log_timedelta=30, metrics={}, num_epochs=100, directory=".", early_stop=10, best_metric="loss"):
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, 0.1, 1, 5*len(dataloaders[0]))
 
     best = -np.inf
     best_epoch = 0
@@ -78,7 +86,7 @@ def train_loop(dataloaders, model, loss_fn, optimizer, warmup=0.1, decay=0.01, l
     for epoch in range(1, num_epochs+1):
         if log_timedelta > 0:
             print(f"============ EPOCH {epoch} ============")
-        train_one_epoch(dataloaders[0], model, loss_fn, optimizer, scheduler, log_timedelta)
+        train_one_epoch(dataloaders[0], model, loss_fn, optimizer, warmup_scheduler, log_timedelta)
 
         loss, computed_metrics = evaluate(dataloaders[1], model, loss_fn, metrics)
         with open(f"{directory}/metrics.csv", "a", newline="") as file:
@@ -92,20 +100,18 @@ def train_loop(dataloaders, model, loss_fn, optimizer, warmup=0.1, decay=0.01, l
                 print(f"{key}: {metric}")
         
         current = -loss if best_metric == "loss" else computed_metrics[best_metric]
+        if epoch == 5:
+            warmup_scheduler = None
+
         if current > best:
             best = current
             best_epoch = epoch
             torch.save(model.state_dict(), f"{directory}/best.pt")
         elif early_stop > 0 and epoch - best_epoch >= early_stop:
             break
-
-
-def get_warmup_decay_scheduler(optimizer, dataloader, num_epochs, warmup_ratio=0.1, final_lr=0.01):
-    total_steps = len(dataloader) * num_epochs
-    warmup_steps = int(warmup_ratio * total_steps)
-    decay_steps = total_steps - warmup_steps
-    def lambda_lr(current_steps):
-        if current_steps < warmup_steps:
-            return current_steps / warmup_steps
-        return (total_steps - current_steps) / decay_steps * (1 - final_lr) + final_lr
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr)
+        elif epoch - best_epoch >= 5:
+            if log_timedelta > 0:
+                print("Plateau detected, load best model and reduce lr.")
+            model.load_state_dict(torch.load(f"{directory}/best.pt"))
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = param_group["lr"] / 10
