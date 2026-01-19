@@ -112,40 +112,6 @@ class UNetWithDerivedFeaturesWithoutDEM(UNet):
         std = std.expand(B, C, H, W)
         x = torch.cat([x, mean, std], dim=1)
         return super().forward(x)
-
-
-class UNet6(nn.Module):
-    def __init__(self, in_channels, num_classes):
-        super().__init__()
-        self.in_conv = DoubleConv(in_channels, 16)
-        self.down1 = Down(16)
-        self.down2 = Down(32)
-        self.down3 = Down(64)
-        self.down4 = Down(128)
-        self.down5 = Down(256)
-        self.down6 = Down(512)
-        self.up1 = Up(1024)
-        self.up2 = Up(512)
-        self.up3 = Up(256)
-        self.up4 = Up(128)
-        self.up5 = Up(64)
-        self.up6 = Up(32)
-        self.out_conv = nn.Conv2d(16, num_classes, kernel_size=1)
-    def forward(self, x):
-        x1 = self.in_conv(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x6 = self.down5(x5)
-        x = self.down6(x6)
-        x = self.up1(x, x6)
-        x = self.up2(x, x5)
-        x = self.up3(x, x4)
-        x = self.up4(x, x3)
-        x = self.up5(x, x2)
-        x = self.up6(x, x1)
-        return self.out_conv(x)
     
 
 """
@@ -196,6 +162,86 @@ class ConvNextUNet(nn.Module):
         self.down2 = ConvNextStage(128, 1)
         self.down3 = ConvNextStage(256, 1)
         self.down4 = ConvNextStage(512, 4)
+        self.up1 = Up(1024)
+        self.up2 = Up(512)
+        self.up3 = Up(256)
+        self.up4 = Up(128)
+        self.out_conv = nn.Conv2d(64, num_classes, kernel_size=1)
+    def forward(self, x):
+        x1 = self.in_conv(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x = self.down4(x4)
+        x = self.up1(x, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        return self.out_conv(x)
+    
+
+class TransformerBlock(nn.Module):
+    def __init__(self, channels, num_heads=8, expansion=4.0):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(channels)
+        self.attention = nn.MultiheadAttention(channels, num_heads, batch_first=True)
+        self.norm2 = nn.LayerNorm(channels)
+
+        hidden = int(channels * expansion)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, channels),
+        )
+
+    def forward(self, x):
+        x = x + self.attention(self.norm1(x), self.norm1(x), self.norm1(x))[0]
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+
+class ViTUNetDown(nn.Module):
+    def __init__(self, in_channels, patch_size=4, num_heads=8):
+        super().__init__()
+        out_channels = in_channels * 2
+        self.patch_size = patch_size
+
+        self.proj = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.pool = nn.MaxPool2d(2)
+
+        self.transformer = TransformerBlock(
+            channels=out_channels,
+            num_heads=num_heads
+        )
+
+    def forward(self, x):
+        x = self.pool(x)
+        x = self.proj(x)
+
+        B, C, H, W = x.shape
+        p = self.patch_size
+
+        x = x.reshape(B, C, H // p, p, W // p, p)
+        x = x.permute(0, 2, 4, 3, 5, 1)
+        x = x.reshape(B, -1, C)
+
+        x = self.transformer(x)
+
+        x = x.reshape(B, H // p, W // p, p, p, C)
+        x = x.permute(0, 5, 1, 3, 2, 4)
+        x = x.reshape(B, C, H, W)
+
+        return x
+
+
+class ViTUNet(nn.Module):
+    def __init__(self, in_channels, num_classes):
+        super().__init__()
+        self.in_conv = DoubleConv(in_channels, 64)
+        self.down1 = Down(64)
+        self.down2 = Down(128)
+        self.down3 = ViTUNetDown(256)
+        self.down4 = ViTUNetDown(512)
         self.up1 = Up(1024)
         self.up2 = Up(512)
         self.up3 = Up(256)
